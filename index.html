@@ -783,8 +783,8 @@
                     <input type="email" id="login-email-alumno" placeholder="tu@email.com">
                 </div>
                 <div class="form-group">
-                    <label class="required">Nombre:</label>
-                    <input type="text" id="login-nombre-alumno" placeholder="Tu nombre">
+                    <label class="required">Contraseña:</label>
+                    <input type="password" id="login-password-alumno" placeholder="Tu contraseña">
                 </div>
                 <div class="btn-group">
                     <button class="btn" onclick="loginAlumno()">Iniciar Sesión</button>
@@ -804,6 +804,14 @@
                 <div class="form-group">
                     <label class="required">Email:</label>
                     <input type="email" id="reg-email" placeholder="tu@email.com">
+                </div>
+                <div class="form-group">
+                    <label class="required">Contraseña:</label>
+                    <input type="password" id="reg-password" placeholder="Mínimo 6 caracteres">
+                </div>
+                <div class="form-group">
+                    <label class="required">Confirmar Contraseña:</label>
+                    <input type="password" id="reg-confirm-password" placeholder="Repite tu contraseña">
                 </div>
                 <div class="form-group">
                     <label class="required">Curso:</label>
@@ -1037,6 +1045,16 @@
             </div>
         </div>
 
+        <!-- Horario publicado para alumno -->
+        <div id="screen-horario-alumno" class="screen">
+            <h2 style="margin-bottom:20px; color:var(--text);">Tu Horario de Clases</h2>
+            <p style="color:var(--text-muted); margin-bottom:20px;">Estas son las clases que te han sido asignadas:</p>
+            <div id="horario-alumno-grid"></div>
+            <div class="btn-group" style="margin-top:30px;">
+                <button class="btn btn-secondary" onclick="volverOpcionesAlumno()">Volver</button>
+            </div>
+        </div>
+
         <!-- Pantalla de Gracias -->
         <div id="screen-gracias" class="screen">
             <div style="text-align: center; padding: 40px;">
@@ -1077,11 +1095,17 @@
                 <button class="tab active" onclick="mostrarTabAdmin('tab-solicitudes')">Solicitudes</button>
                 <button class="tab" onclick="mostrarTabAdmin('tab-planificacion')">Planificación</button>
                 <button class="tab" onclick="mostrarTabAdmin('tab-profesores')">Profesores</button>
+                <button class="tab" onclick="mostrarTabAdmin('tab-archivos')">Archivos</button>
                 <button class="tab" onclick="mostrarTabAdmin('tab-exportar')">Exportar</button>
             </div>
 
             <!-- Tab Solicitudes -->
             <div id="tab-solicitudes" class="tab-content active">
+                <div style="display:flex; justify-content:flex-end; margin-bottom:15px;">
+                    <button class="btn btn-danger" onclick="borrarTodosLosAlumnos()" style="font-size:0.85em;">
+                        🗑️ Borrar Todos los Alumnos
+                    </button>
+                </div>
                 <div class="stats-grid" id="stats-solicitudes"></div>
                 <div id="lista-solicitudes"></div>
             </div>
@@ -1124,6 +1148,17 @@
             <div id="tab-profesores" class="tab-content">
                 <button class="btn" onclick="mostrarModalProfesor()" style="margin-bottom: 20px;">➕ Añadir Profesor</button>
                 <div id="lista-profesores"></div>
+            </div>
+
+            <!-- Tab Archivos -->
+            <div id="tab-archivos" class="tab-content">
+                <h3 style="margin-bottom:15px; color:var(--text);">Repositorio de Archivos de Alumnos</h3>
+                <div class="alert alert-info" style="margin-bottom:15px;">
+                    <strong>Almacenamiento:</strong> Los archivos se guardan en el navegador (localStorage).
+                    Para almacenamiento permanente en la nube, configura <strong>SUPABASE_CONFIG</strong> en el código.
+                    <a href="https://supabase.com" target="_blank" style="color:var(--green);">supabase.com</a> — cuenta gratis, 1GB storage.
+                </div>
+                <div id="lista-archivos-admin"></div>
             </div>
 
             <!-- Tab Exportar -->
@@ -1176,8 +1211,21 @@
                     </div>
                 </div>
                 <div class="form-group">
+                    <label>URL Calendario GoHighLevel (iCal):</label>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <input type="url" id="profesor-ghl-url" placeholder="https://app.gohighlevel.com/.../ical" style="flex:1;">
+                        <button class="btn btn-secondary" onclick="sincronizarCalendarioGHL()" style="white-space:nowrap; font-size:0.85em;">
+                            🔄 Sync GHL
+                        </button>
+                    </div>
+                    <small style="color:var(--text-muted);">
+                        Pega la URL iCal del calendario del profesor en GoHighLevel.
+                        La disponibilidad se calculará automáticamente según sus eventos.
+                    </small>
+                </div>
+                <div class="form-group">
                     <label>Disponibilidad Horaria:</label>
-                    <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 10px;">Selecciona los horarios disponibles</p>
+                    <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 10px;">Selecciona los horarios disponibles (o sincroniza desde GHL arriba)</p>
                     <div id="profesor-disponibilidad-grid" class="grid-horario"></div>
                 </div>
                 <div class="btn-group">
@@ -1484,6 +1532,7 @@
             
             if (tabId === 'tab-solicitudes') actualizarSolicitudes();
             if (tabId === 'tab-profesores') actualizarProfesores();
+            if (tabId === 'tab-archivos') actualizarArchivos();
         }
 
         function siguientePaso(actualScreen, siguienteScreen) {
@@ -1491,6 +1540,22 @@
         }
 
         // ============== FUNCIONES DE AUTENTICACIÓN ==============
+
+        // SUPABASE CONFIG (opcional - rellena para activar almacenamiento en la nube)
+        const SUPABASE_CONFIG = {
+            url: '',           // Ej: 'https://xyzxyz.supabase.co'
+            anonKey: '',       // Tu clave anónima de Supabase
+            bucketName: 'archivos-alumnos'
+        };
+
+        async function hashPassword(password) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(password);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
         function loginAdmin() {
             const password = document.getElementById('password-admin').value;
             if (password === 'admin2025') {
@@ -1505,42 +1570,44 @@
             mostrarScreen('screen-inicial');
         }
 
-        function loginAlumno() {
+        async function loginAlumno() {
             const email = document.getElementById('login-email-alumno').value.trim();
-            const nombre = document.getElementById('login-nombre-alumno').value.trim();
+            const password = document.getElementById('login-password-alumno').value;
 
-            if (!email) {
-                alert('Por favor, introduce tu email');
+            if (!email || !password) {
+                alert('Por favor, introduce tu email y contraseña');
                 return;
             }
 
             // Asegurarse de tener los datos más recientes de localStorage
             const datosGuardados = JSON.parse(localStorage.getItem('estudiantes')) || [];
             datosGuardados.forEach(e => {
-                if (!estudiantes.some(s => s.id === e.id)) {
-                    estudiantes.push(e);
-                }
+                if (!estudiantes.some(s => s.id === e.id)) estudiantes.push(e);
             });
 
-            // Buscar solo por email (único garantizado); el nombre es opcional para verificar
             const estudiante = estudiantes.find(e =>
                 e.email.toLowerCase() === email.toLowerCase()
             );
 
-            if (estudiante) {
-                // Si el alumno escribió su nombre, verificar que coincide (ayuda a detectar errores de email)
-                if (nombre && !estudiante.nombre.toLowerCase().includes(nombre.toLowerCase())) {
-                    alert('El email no corresponde a ese nombre. Comprueba tus datos.');
+            if (!estudiante) {
+                alert('No se encontró ningún alumno con ese email. Por favor, regístrate primero.');
+                return;
+            }
+
+            // Verificar contraseña (soporte para cuentas antiguas sin contraseña)
+            if (estudiante.passwordHash) {
+                const passwordHash = await hashPassword(password);
+                if (estudiante.passwordHash !== passwordHash) {
+                    alert('Contraseña incorrecta');
                     return;
                 }
-                estudianteActual = estudiante;
-                if (estudiante.esNuevo) {
-                    mostrarScreen('screen-opciones-nuevo');
-                } else {
-                    mostrarScreen('screen-opciones-recurrente');
-                }
+            }
+
+            estudianteActual = estudiante;
+            if (estudiante.esNuevo) {
+                mostrarScreen('screen-opciones-nuevo');
             } else {
-                alert('No se encontró ningún alumno con ese email. Por favor, regístrate primero.');
+                mostrarScreen('screen-opciones-recurrente');
             }
         }
 
@@ -1548,6 +1615,8 @@
             const nombre = document.getElementById('reg-nombre').value.trim();
             const apellidos = document.getElementById('reg-apellidos').value.trim();
             const email = document.getElementById('reg-email').value.trim();
+            const password = document.getElementById('reg-password').value;
+            const confirmPassword = document.getElementById('reg-confirm-password').value;
             let curso = document.getElementById('reg-curso').value;
             const comunidad = document.getElementById('reg-comunidad').value.trim();
             const provincia = document.getElementById('reg-provincia').value.trim();
@@ -1557,8 +1626,18 @@
             const tutorNombre = document.getElementById('tutor-nombre').value.trim();
             const tutorEmail = document.getElementById('tutor-email').value.trim();
 
-            if (!nombre || !apellidos || !email || !curso || !comunidad) {
+            if (!nombre || !apellidos || !email || !password || !curso || !comunidad) {
                 alert('Por favor, completa todos los campos obligatorios');
+                return;
+            }
+
+            if (password.length < 6) {
+                alert('La contraseña debe tener al menos 6 caracteres');
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                alert('Las contraseñas no coinciden');
                 return;
             }
 
@@ -1576,15 +1655,18 @@
                 return;
             }
 
-            if (estudiantes.some(e => e.email === email)) {
+            if (estudiantes.some(e => e.email.toLowerCase() === email.toLowerCase())) {
                 alert('Ya existe un estudiante con ese email');
                 return;
             }
+
+            const passwordHash = await hashPassword(password);
 
             const nuevoEstudiante = {
                 id: Date.now(),
                 nombre: `${nombre} ${apellidos}`,
                 email: email,
+                passwordHash: passwordHash,
                 curso: curso,
                 comunidad: comunidad,
                 provincia: provincia,
@@ -1602,8 +1684,6 @@
 
             estudiantes.push(nuevoEstudiante);
             await guardarEstudiantes();
-            // Auto-login directo: ya tenemos los datos, no hace falta volver a buscar la cuenta
-            alert('¡Registro exitoso! Entrando a tu perfil...');
             estudianteActual = nuevoEstudiante;
             mostrarScreen('screen-opciones-nuevo');
         }
@@ -1617,6 +1697,20 @@
         function toggleMinorFields() {
             const menorEdad = document.getElementById('menor-edad').checked;
             document.getElementById('minor-fields').style.display = menorEdad ? 'block' : 'none';
+        }
+
+        async function borrarTodosLosAlumnos() {
+            if (!confirm('¿Estás seguro? Esta acción eliminará TODOS los datos de alumnos y no se puede deshacer.')) return;
+            if (!confirm('Última confirmación: ¿Borrar todos los alumnos? Escribe OK en el siguiente cuadro.')) return;
+            const confirmacion = prompt('Escribe BORRAR para confirmar:');
+            if (confirmacion !== 'BORRAR') {
+                alert('Operación cancelada.');
+                return;
+            }
+            estudiantes = [];
+            await guardarEstudiantes();
+            actualizarSolicitudes();
+            alert('Todos los datos de alumnos han sido eliminados.');
         }
 
         function cerrarSesion() {
@@ -1649,9 +1743,13 @@
         }
 
         function mostrarHorarioPublicado() {
-            // Esta función mostraría el horario publicado
-            alert('Funcionalidad de horario publicado - Por implementar con integración');
-            volverOpcionesAlumno();
+            const horarioGuardado = JSON.parse(localStorage.getItem('horarioPublicado')) || null;
+            if (!horarioGuardado || horarioGuardado.length === 0) {
+                alert('El horario todavía no ha sido publicado por el administrador. Usa la opción "1ª Clase de Prueba Gratuita" para registrar tu solicitud y te avisaremos en cuanto esté disponible.');
+                return;
+            }
+            mostrarScreen('screen-horario-alumno');
+            renderizarHorarioAlumno(horarioGuardado);
         }
 
         // ============== DISPONIBILIDAD HORARIA ==============
@@ -1748,13 +1846,57 @@
             return true;
         }
 
+        async function leerArchivosComoBase64(fileInput) {
+            const archivos = [];
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) return archivos;
+
+            for (const file of fileInput.files) {
+                const MAX_SIZE = 4 * 1024 * 1024; // 4MB por archivo
+                if (file.size > MAX_SIZE) {
+                    alert(`"${file.name}" supera el límite de 4MB y no se guardará localmente. Configura Supabase Storage para archivos grandes.`);
+                    continue;
+                }
+                const base64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+
+                // Si Supabase está configurado, subir al bucket
+                let urlRemota = null;
+                if (SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey) {
+                    try {
+                        const path = `${estudianteActual.id}/${Date.now()}-${file.name}`;
+                        const resp = await fetch(
+                            `${SUPABASE_CONFIG.url}/storage/v1/object/${SUPABASE_CONFIG.bucketName}/${path}`,
+                            { method: 'POST', headers: { 'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`, 'Content-Type': file.type }, body: file }
+                        );
+                        if (resp.ok) {
+                            urlRemota = `${SUPABASE_CONFIG.url}/storage/v1/object/public/${SUPABASE_CONFIG.bucketName}/${path}`;
+                        }
+                    } catch (_) {}
+                }
+
+                archivos.push({
+                    nombre: file.name,
+                    tipo: file.type,
+                    tamanio: file.size,
+                    datos: urlRemota || base64,
+                    esRemoto: !!urlRemota,
+                    fechaSubida: new Date().toISOString()
+                });
+            }
+            return archivos;
+        }
+
         async function guardarTema() {
             const asignatura = document.getElementById('asignatura-select').value;
             const temasSeleccionados = Array.from(document.querySelectorAll('.tema-check:checked'))
                 .map(cb => cb.value);
             const subtemasSeleccionados = Array.from(document.querySelectorAll('.subtema-check:checked'))
                 .map(cb => ({ tema: cb.dataset.tema, subtema: cb.value }));
-            
+
             if (subtemasSeleccionados.length === 0) {
                 alert('Selecciona al menos un subtema');
                 return;
@@ -1766,9 +1908,11 @@
             const tiposClase = Array.from(document.querySelectorAll('.tipo-clase-check:checked'))
                 .map(cb => cb.value);
             const comentarios = document.getElementById('comentarios-clase').value;
+            const fileInput = document.getElementById('archivo-clase');
+            const archivosSubidos = await leerArchivosComoBase64(fileInput);
 
             // Calcular si es urgente (examen en ≤7 días)
-            const urgente = fechaExamen ? 
+            const urgente = fechaExamen ?
                 (new Date(fechaExamen) - new Date()) <= 7 * 24 * 60 * 60 * 1000 : false;
 
             // CORRECCIÓN CRÍTICA: Distribuir las horas entre los subtemas
@@ -1786,12 +1930,12 @@
                         tema: tema,
                         subtemas: subtemasDelTema,
                         nota: nivel,
-                        horas: horasPorSubtema, // Horas distribuidas
+                        horas: horasPorSubtema,
                         fechaExamen: fechaExamen || null,
                         urgente: urgente,
                         tiposClase: tiposClase.length > 0 ? tiposClase : ['Ejercicios'],
                         comentarios: comentarios,
-                        archivos: []
+                        archivos: archivosSubidos
                     };
 
                     estudianteActual.temas.push(temaData);
@@ -2532,13 +2676,37 @@
 
         // ============== CONFIRMAR HORARIO ==============
         function confirmarHorario() {
-            if (confirm('¿Confirmar este horario como definitivo? Esta acción marcará el horario como confirmado.')) {
+            if (confirm('¿Confirmar este horario como definitivo? Los alumnos podrán verlo al iniciar sesión.')) {
                 horarioConfirmado = true;
                 document.getElementById('horario-confirmado-badge').style.display = 'inline-block';
-                
-                // Aquí iría la integración con GoHighLevel
-                alert('Horario confirmado. Preparado para integración con GoHighLevel.');
+                // Guardar horario publicado para que los alumnos puedan verlo
+                localStorage.setItem('horarioPublicado', JSON.stringify(clasesPlanificadas));
+                alert('Horario confirmado y publicado. Los alumnos ya pueden verlo.');
             }
+        }
+
+        function renderizarHorarioAlumno(clases) {
+            const contenedor = document.getElementById('horario-alumno-grid');
+            if (!contenedor) return;
+            contenedor.innerHTML = '';
+            const clasesDelAlumno = clases.filter(c =>
+                c.estudiantes && c.estudiantes.some(e => e.id === estudianteActual.id)
+            );
+            if (clasesDelAlumno.length === 0) {
+                contenedor.innerHTML = '<p style="color:var(--text-muted);">No tienes clases asignadas en este horario todavía.</p>';
+                return;
+            }
+            clasesDelAlumno.forEach(clase => {
+                const card = document.createElement('div');
+                card.className = 'solicitud-card';
+                card.innerHTML = `
+                    <h4 style="color:var(--green);">${clase.asignatura} — ${clase.subtema}</h4>
+                    <p><strong>Día y hora:</strong> ${clase.dia} ${clase.hora}</p>
+                    <p><strong>Profesor:</strong> ${clase.profesor}</p>
+                    <p><strong>Alumnos en clase:</strong> ${clase.estudiantes.length}</p>
+                `;
+                contenedor.appendChild(card);
+            });
         }
 
         function limpiarPlanificacion() {
@@ -2697,11 +2865,14 @@
                 return;
             }
 
+            const ghlUrl = document.getElementById('profesor-ghl-url').value.trim();
+
             const nuevoProfesor = {
                 id: Date.now(),
                 nombre: nombre,
                 materias: materias,
-                disponibilidad: disponibilidad.length > 0 ? disponibilidad : generarTodosLosSlots()
+                disponibilidad: disponibilidad.length > 0 ? disponibilidad : generarTodosLosSlots(),
+                ghlCalendarUrl: ghlUrl || null
             };
 
             profesores.push(nuevoProfesor);
@@ -2711,6 +2882,49 @@
             alert('Profesor añadido correctamente');
         }
 
+        function actualizarArchivos() {
+            const lista = document.getElementById('lista-archivos-admin');
+            lista.innerHTML = '';
+
+            const todosLosArchivos = [];
+            estudiantes.forEach(est => {
+                est.temas.forEach(tema => {
+                    (tema.archivos || []).forEach(archivo => {
+                        todosLosArchivos.push({ estudiante: est.nombre, email: est.email, tema: tema.tema, asignatura: tema.asignatura, archivo });
+                    });
+                });
+            });
+
+            if (todosLosArchivos.length === 0) {
+                lista.innerHTML = '<p style="color:var(--text-muted);">No hay archivos subidos todavía.</p>';
+                return;
+            }
+
+            todosLosArchivos.forEach(({ estudiante, email, tema, asignatura, archivo }) => {
+                const card = document.createElement('div');
+                card.className = 'solicitud-card';
+                const esImagen = archivo.tipo && archivo.tipo.startsWith('image/');
+                const esPDF = archivo.tipo === 'application/pdf';
+                card.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+                        <div>
+                            <strong style="color:var(--green);">${archivo.nombre}</strong><br>
+                            <small style="color:var(--text-muted);">Alumno: ${estudiante} (${email})</small><br>
+                            <small style="color:var(--text-muted);">Asignatura: ${asignatura} — Tema: ${tema}</small><br>
+                            <small style="color:var(--text-muted);">Subido: ${new Date(archivo.fechaSubida).toLocaleDateString('es-ES')}</small>
+                        </div>
+                        <a href="${archivo.datos}" download="${archivo.nombre}" target="_blank"
+                           class="btn btn-secondary" style="font-size:0.8em;">
+                            ⬇ Descargar
+                        </a>
+                    </div>
+                    ${esImagen ? `<img src="${archivo.datos}" alt="${archivo.nombre}" style="max-width:100%; max-height:200px; margin-top:10px; border-radius:6px;">` : ''}
+                    ${esPDF ? `<a href="${archivo.datos}" target="_blank" style="color:var(--green); font-size:0.9em;">📄 Abrir PDF</a>` : ''}
+                `;
+                lista.appendChild(card);
+            });
+        }
+
         function actualizarProfesores() {
             const lista = document.getElementById('lista-profesores');
             lista.innerHTML = '';
@@ -2718,16 +2932,105 @@
             profesores.forEach(prof => {
                 const card = document.createElement('div');
                 card.className = 'profesor-card';
+                const ghlBoton = prof.ghlCalendarUrl
+                    ? `<button class="btn btn-secondary btn-sm" onclick="sincronizarCalendarioGHL(${prof.id})" style="font-size:0.8em;">🔄 Sync GHL</button>`
+                    : `<small style="color:var(--text-muted);">Sin calendario GHL</small>`;
                 card.innerHTML = `
                     <h4 style="color: var(--text); margin-bottom: 10px;">${prof.nombre}</h4>
                     <p><strong>Materias:</strong> ${prof.materias.join(', ')}</p>
                     <p><strong>Disponibilidad:</strong> ${prof.disponibilidad.length} slots</p>
+                    ${prof.ghlCalendarUrl ? `<p style="font-size:0.8em; color:var(--text-muted);">GHL: ${prof.ghlCalendarUrl.substring(0,50)}...</p>` : ''}
                     <div class="btn-group" style="margin-top: 10px;">
+                        ${ghlBoton}
                         <button class="btn btn-danger btn-sm" onclick="eliminarProfesor(${prof.id})">Eliminar</button>
                     </div>
                 `;
                 lista.appendChild(card);
             });
+        }
+
+        async function sincronizarCalendarioGHL(profesorId) {
+            const prof = profesores.find(p => p.id === profesorId);
+            // Si se llama desde el modal (sin ID), leer el input del modal
+            const urlInput = profesorId ? (prof && prof.ghlCalendarUrl) : document.getElementById('profesor-ghl-url').value.trim();
+            if (!urlInput) {
+                alert('No hay URL de calendario GoHighLevel configurada para este profesor.');
+                return;
+            }
+
+            try {
+                // Usar el Netlify proxy para evitar problemas de CORS
+                const proxyUrl = `/.netlify/functions/ical-proxy?url=${encodeURIComponent(urlInput)}`;
+                const resp = await fetch(proxyUrl);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const icalText = await resp.text();
+                const slots = calcularDisponibilidadDesdeICal(icalText);
+
+                if (profesorId && prof) {
+                    prof.disponibilidad = slots;
+                    await guardarProfesores();
+                    actualizarProfesores();
+                    alert(`Disponibilidad de ${prof.nombre} actualizada: ${slots.length} slots disponibles.`);
+                } else {
+                    // Desde el modal: marcar slots en el grid
+                    document.querySelectorAll('#profesor-disponibilidad-grid .horario-slot').forEach(div => {
+                        const slotText = div.textContent.trim().replace('\n', '-');
+                        if (slots.includes(slotText)) {
+                            div.classList.add('selected');
+                        } else {
+                            div.classList.remove('selected');
+                        }
+                    });
+                    alert(`Calendario sincronizado: ${slots.length} slots disponibles marcados.`);
+                }
+            } catch (e) {
+                alert(`Error al sincronizar el calendario GoHighLevel: ${e.message}\n\nAsegúrate de que el Netlify function ical-proxy está desplegado.`);
+            }
+        }
+
+        function calcularDisponibilidadDesdeICal(icalText) {
+            // Parsear eventos VEVENT del iCal
+            const eventos = [];
+            const bloques = icalText.split('BEGIN:VEVENT');
+            for (let i = 1; i < bloques.length; i++) {
+                const bloque = bloques[i];
+                const dtstart = bloque.match(/DTSTART[^:]*:(\d{8}T\d{6})/)?.[1];
+                const dtend   = bloque.match(/DTEND[^:]*:(\d{8}T\d{6})/)?.[1];
+                if (dtstart && dtend) {
+                    eventos.push({
+                        inicio: new Date(`${dtstart.slice(0,4)}-${dtstart.slice(4,6)}-${dtstart.slice(6,8)}T${dtstart.slice(9,11)}:${dtstart.slice(11,13)}:00`),
+                        fin:    new Date(`${dtend.slice(0,4)}-${dtend.slice(4,6)}-${dtend.slice(6,8)}T${dtend.slice(9,11)}:${dtend.slice(11,13)}:00`)
+                    });
+                }
+            }
+
+            // Calcular slots libres para las próximas 4 semanas
+            const ahora = new Date();
+            const slotsLibres = [];
+            DIAS.forEach((dia, diaIdx) => {
+                HORAS.forEach(hora => {
+                    let ocupadoAlgunaSemana = false;
+                    for (let semana = 0; semana < 4; semana++) {
+                        const fecha = new Date(ahora);
+                        const targetDay = diaIdx + 1; // 1=Lunes ... 5=Viernes
+                        let diff = targetDay - (fecha.getDay() === 0 ? 7 : fecha.getDay());
+                        if (diff <= 0) diff += 7;
+                        fecha.setDate(fecha.getDate() + diff + semana * 7);
+                        const [h] = hora.split(':').map(Number);
+                        fecha.setHours(h, 0, 0, 0);
+                        const fechaFin = new Date(fecha.getTime() + 60 * 60 * 1000);
+
+                        if (eventos.some(ev => ev.inicio < fechaFin && ev.fin > fecha)) {
+                            ocupadoAlgunaSemana = true;
+                            break;
+                        }
+                    }
+                    if (!ocupadoAlgunaSemana) {
+                        slotsLibres.push(`${dia}-${hora}`);
+                    }
+                });
+            });
+            return slotsLibres;
         }
 
         function eliminarProfesor(id) {
