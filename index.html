@@ -1452,28 +1452,35 @@
         }
 
         function mostrarTab(tabId) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            // Buscar el botón tab correcto sin depender del evento global (falla en Firefox)
-            document.querySelectorAll('.tab').forEach(t => {
+            const targetEl = document.getElementById(tabId);
+            if (!targetEl) return;
+            // Actuar solo dentro del contenedor padre para no interferir con otros grupos de tabs
+            const container = targetEl.closest('.screen') || document;
+            container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            container.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            // Activar el botón tab correcto sin depender del evento global (falla en Firefox)
+            container.querySelectorAll('.tab').forEach(t => {
                 const oc = t.getAttribute('onclick') || '';
                 if (oc.includes("'" + tabId + "'") || oc.includes('"' + tabId + '"')) {
                     t.classList.add('active');
                 }
             });
-            document.getElementById(tabId).classList.add('active');
+            targetEl.classList.add('active');
         }
 
         function mostrarTabAdmin(tabId) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => {
+            const targetEl = document.getElementById(tabId);
+            if (!targetEl) return;
+            const container = targetEl.closest('.screen') || document;
+            container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            container.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            container.querySelectorAll('.tab').forEach(t => {
                 const oc = t.getAttribute('onclick') || '';
                 if (oc.includes("'" + tabId + "'") || oc.includes('"' + tabId + '"')) {
                     t.classList.add('active');
                 }
             });
-            document.getElementById(tabId).classList.add('active');
+            targetEl.classList.add('active');
             
             if (tabId === 'tab-solicitudes') actualizarSolicitudes();
             if (tabId === 'tab-profesores') actualizarProfesores();
@@ -1501,18 +1508,31 @@
         function loginAlumno() {
             const email = document.getElementById('login-email-alumno').value.trim();
             const nombre = document.getElementById('login-nombre-alumno').value.trim();
-            
-            if (!email || !nombre) {
-                alert('Por favor, completa todos los campos');
+
+            if (!email) {
+                alert('Por favor, introduce tu email');
                 return;
             }
 
-            const estudiante = estudiantes.find(e => 
-                e.email.toLowerCase() === email.toLowerCase() && 
-                e.nombre.toLowerCase().includes(nombre.toLowerCase())
+            // Asegurarse de tener los datos más recientes de localStorage
+            const datosGuardados = JSON.parse(localStorage.getItem('estudiantes')) || [];
+            datosGuardados.forEach(e => {
+                if (!estudiantes.some(s => s.id === e.id)) {
+                    estudiantes.push(e);
+                }
+            });
+
+            // Buscar solo por email (único garantizado); el nombre es opcional para verificar
+            const estudiante = estudiantes.find(e =>
+                e.email.toLowerCase() === email.toLowerCase()
             );
 
             if (estudiante) {
+                // Si el alumno escribió su nombre, verificar que coincide (ayuda a detectar errores de email)
+                if (nombre && !estudiante.nombre.toLowerCase().includes(nombre.toLowerCase())) {
+                    alert('El email no corresponde a ese nombre. Comprueba tus datos.');
+                    return;
+                }
                 estudianteActual = estudiante;
                 if (estudiante.esNuevo) {
                     mostrarScreen('screen-opciones-nuevo');
@@ -1520,7 +1540,7 @@
                     mostrarScreen('screen-opciones-recurrente');
                 }
             } else {
-                alert('No se encontró ningún estudiante con esos datos. Por favor, regístrate primero.');
+                alert('No se encontró ningún alumno con ese email. Por favor, regístrate primero.');
             }
         }
 
@@ -1582,11 +1602,10 @@
 
             estudiantes.push(nuevoEstudiante);
             await guardarEstudiantes();
-            alert('Registro exitoso. Ahora puedes iniciar sesión.');
-            // Pre-rellenar el email en el login para facilitar el acceso
-            document.getElementById('login-email-alumno').value = email;
-            document.getElementById('login-nombre-alumno').value = nombre;
-            mostrarTab('tab-login');
+            // Auto-login directo: ya tenemos los datos, no hace falta volver a buscar la cuenta
+            alert('¡Registro exitoso! Entrando a tu perfil...');
+            estudianteActual = nuevoEstudiante;
+            mostrarScreen('screen-opciones-nuevo');
         }
 
         function toggleOtroCurso() {
